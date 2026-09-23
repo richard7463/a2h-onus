@@ -5,7 +5,7 @@ Same judge, same evidence, two policies:
   B) judge + Onus: provenance checks + evidence-grade gate on top
 
 Run against real Jev:
-    export JUDGMENT_BACKEND=jev TYPESAFE_API_KEY=你的key
+    export JUDGMENT_BACKEND=jev TYPESAFE_API_KEY=your-key
     python -m tests.gate_ab_bench
 
 Or offline (mock judge, only checks the script runs):

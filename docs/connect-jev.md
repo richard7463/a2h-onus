@@ -1,121 +1,169 @@
-# 接入指南：跑通第一次真实 Jev 判断
+# Connecting to Jev: your first real judgment
 
-> 目标：让 `verify_claim` 真的调用一次 Jev，返回一个**真实**判断和收据。
-> 跑通这一次，你就从"只有想法"变成"接过 Jev、能真跑出判断"——才有资格谈发布。
-
----
-
-## 为什么走 OpenRouter，而不是 TypeSafe 官方
-
-TypeSafe 官方要 waitlist，可能等。**OpenRouter 不用排队**，注册就能拿 key，而且跑的是同一个 `/v1/systemone` 接口、同一套请求/响应格式。先用它跑通，以后想换官方只改一个环境变量。
-
-（其他等价网关：Opper `https://api.opper.ai/v3/compat`、LLMGateway `https://api.llmgateway.io`，都一样。）
+> Goal: make `verify_claim` actually call Jev once and come back with a **real**
+> judgment and a real receipt.
+> Every response shape below was taken from a live call on 2026-09-23, not from
+> documentation.
 
 ---
 
-## 第一步：拿 key（5 分钟）
+## Getting a key
 
-1. 去 https://openrouter.ai/settings/keys 注册、创建一个 API key
-2. 充一点点额度——一次判断约 $0.00003，几美元够你测几万次
-3. 复制 key，形如 `sk-or-...`
+TypeSafe has self-serve signup. No waitlist, no invitation:
+
+1. Open <https://console.typesafe.ai> — it redirects to the sign-in page.
+2. Continue with Google, or choose "Email me a code instead" and enter the code.
+3. Create an API key in the console.
+
+TypeSafe origin: `https://api.typesafe.ai`. Keys are sent as
+`Authorization: Bearer <key>`.
+
+**Equivalent gateways.** The same `/v1/systemone` contract is offered by other
+gateways, and this repository accepts any of them through `JEV_BASE_URL`:
+
+- OpenRouter — `https://openrouter.ai/api`
+- Opper — `https://api.opper.ai/v3/compat`
+- LLMGateway — `https://api.llmgateway.io`
 
 ---
 
-## 第二步：装依赖 + 设环境变量
+## Step 1: install and configure
 
 ```bash
 cd a2h-onus
+python3 -m venv .venv && source .venv/bin/activate
 pip install -e .
 
 export JUDGMENT_BACKEND=jev
-export JEV_BASE_URL=https://openrouter.ai/api      # OpenRouter 网关
-export JEV_API_KEY=sk-or-你的key
-export JEV_MODEL=jev-1.13.0                           # 钉死版本，别用 latest
+export TYPESAFE_API_KEY=...        # or JEV_API_KEY
+export JEV_MODEL=jev-1.13.0        # pin it; never 'latest'
 ```
+
+### Pick the model name carefully
+
+This is the first thing that will bite you. `GET /v1/models` currently advertises
+only two names:
+
+```json
+{"models":[
+  {"name":"jev-latest", "description":"..."},
+  {"name":"jev-preview","description":"..."}
+]}
+```
+
+The **pinned** version is not in that list, but it is what works:
+
+- `jev-1.13.0` → accepted, and this repository pins it
+- `jev-1.13` → `400 {"error_type":"api_usage_error","message":"Unknown model: jev-1.13"}`
+
+Do not use `latest`: a floating alias destroys replayability, which is the whole
+point of the receipt.
 
 ---
 
-## 第三步：先裸测一次，确认 key 和格式（关键）
+## Step 2: one raw call, before any code of ours
 
-**别急着跑 verify_claim。先直接 curl 一次**，亲眼看到真实返回长什么样。这一步能帮你把后面所有问题隔离清楚：
+Do not start with `verify_claim`. Call the API directly first, so you can see the real
+response and isolate every later problem against it:
 
 ```bash
-curl https://openrouter.ai/api/v1/systemone \
-  -H "Authorization: Bearer $JEV_API_KEY" \
+curl https://api.typesafe.ai/v1/systemone \
+  -H "Authorization: Bearer $TYPESAFE_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "jev-1.13.0",
-    "state": "I was charged twice for my subscription.",
+    "state": "My card was charged twice for invoice INV-9921.",
     "questions": {
-      "refund": {"type": "noul", "instructions": "Is the customer asking for money back?"}
+      "billing": {"type":"noul",
+                  "instructions":"The message is about a billing problem."},
+      "team":    {"type":"choice",
+                  "instructions":"Which team should handle this?",
+                  "criteria":{"billing":"Payments","technical":"Bugs","sales":"Pricing"}},
+      "urgency": {"type":"score",
+                  "instructions":"How urgent is this?",
+                  "criteria":["can wait","this week","today","right now"]}
     }
   }'
 ```
 
-**你应该看到**（这就是官方文档给的真实格式，本仓库的解析器就是按它写的）：
+**Real response, trimmed** (this is what came back, verbatim in structure):
 
 ```json
 {
-  "model": "typesafe/jev-1.13-20260917",
-  "answers": { "refund": { "type": "noul", "noul": 0.98 } },
-  "usage": { "input_tokens": 275, "output_tokens": 20 }
+  "model": "jev-1.13.0",
+  "answers": {
+    "billing": { "type": "noul", "noul": 0.98 },
+    "team":    { "type": "choice", "choice": "billing", "confidence": 1.0,
+                 "probabilities": { "technical": 0.0, "billing": 1.0, "sales": 0.0 } },
+    "urgency": { "type": "score", "score": 1.45, "confidence": 0.49,
+                 "legend": { "0": "can wait", "1": "this week",
+                             "2": "today", "3": "right now" },
+                 "probabilities": { "0": 0.03, "1": 0.52, "2": 0.42, "3": 0.03 } }
+  },
+  "usage": { "input_tokens": 392, "output_tokens": 69 }
 }
 ```
 
-- ✅ 看到 `answers.refund.noul` 是个 0-1 的数 → key 通了，格式对了，往下走
-- ❌ 401 → key 不对
-- ❌ 402 → 没额度，去充值
-- ❌ 429/529 → 过载，稍后重试（本仓库代码会自动处理这个）
+### Three things in there that documentation does not tell you
+
+1. **`score` is a float, not an option index.** `1.45` sits between "this week" (1)
+   and "today" (2), and `legend` maps indices back to labels. Do not cast it to an
+   integer.
+2. **`choice` and `score` carry their own `confidence`.** Use the value the model
+   returned. Do not recompute it as `max(probabilities)` — on this response that
+   gives 0.52 where the model said 0.49.
+3. **`usage` has no `cost` field.** You get `input_tokens` and `output_tokens` only,
+   so compute cost yourself from your own rate.
+
+### Status codes
+
+| code | meaning |
+|---|---|
+| 200 | worked — check that `answers.<name>.noul` is a number between 0 and 1 |
+| 400 | malformed request, or `Unknown model` — see the model-name note above |
+| 403 | `{"error_type":"authentication_error","message":"Must supply an API key!..."}` — key missing or wrong |
+| 402 | out of credit |
+| 429 / 529 | overloaded; try later, and this repository falls back to `kev` once |
 
 ---
 
-## 第四步：跑通 verify_claim 的第一次真实判断
-
-把 x_post 例子从 mock 切到真 Jev：
+## Step 3: the first real judgment through `verify_claim`
 
 ```bash
-# 例子里默认 setdefault mock，用环境变量覆盖它
 JUDGMENT_BACKEND=jev python examples/verify_x_post.py
 ```
 
-**成功的样子**：返回里 `model_id` 是 `typesafe/jev-1.13-...`（不是 `mock-heuristic-0`），`confidence` 是 Jev 真算出来的数，收据里 `distribution` 是真实概率。
-
-**这一刻，你有真东西了。** 截图存下来——这是你第一张真收据。
-
----
-
-## 第五步：确认没被我坑到（诚实检查）
-
-本仓库的响应解析（`a2h_onus/verify/judgment.py` 的 `_parse_answers`）是按官方文档的 **noul** 例子写的。但 **choice 和 score 的确切字段，官方那页只给了 noul 的完整例子**，我是按模式推的：
-
-```python
-choice  → {"type":"choice", "choice":"billing", "probabilities":{...}}
-score   → {"type":"score",  "score":3,           "probabilities":{...}}
-```
-
-**你的验证动作**：真跑一次带 choice 或 score 问题的请求（policy_packs 里 x_post.json 就有一个 `evidence_quality` score 问题），curl 看真实返回，对照 `_parse_answers` 里的字段名。如果对不上（比如 score 的键不叫 `score` 或概率不叫 `probabilities`），改那一处即可——其余逻辑不动。
-
-这是唯一一处可能需要你回头微调的地方。noul 已被官方例子证实无误。
+Success looks like this: `model_id` in the receipt is `jev-1.13.0` and not
+`mock-heuristic-0`, the confidence is a number Jev actually produced, and
+`distribution` in the receipt holds the real probabilities. Save that receipt. It is
+the first one that is real.
 
 ---
 
-## 常见问题
+## Common questions
 
-**Q：state 太长报错？**
-Jev 1.13 限制：state + 最长 question ≤ 32k token，总 ≤ 64k。证据太大就先截断/摘要（用别的模型摘要，不要用 Jev）。
+**The state is too long and it errors.**
+Jev 1.13 limits state plus the longest question to 32k tokens, 64k total. Truncate or
+summarise oversized evidence first, using a different model, not Jev.
 
-**Q：想换回本地免费？**
-起一个 kev server（Apache-2.0，API 兼容），`export JUDGMENT_BACKEND=kev KEV_URL=http://127.0.0.1:4827`。判断逻辑一行不用改。
+**I want to go back to local and free.**
+Run a `kev` server (Apache-2.0, API compatible) and set
+`JUDGMENT_BACKEND=kev KEV_URL=http://127.0.0.1:4827`. No judgment logic changes.
 
-**Q：判断结果不准？**
-问题措辞（policy_packs 里的 instructions）是判断质量的全部。改措辞、重跑、对比。这是"questions as code"——版本化它，把问题文本连同答案记进收据。
+**The judgments are not accurate enough.**
+The wording of the questions in `policy_packs/` is the entire quality surface. Rewrite
+the instructions, re-run, compare. This is "questions as code" — version them, and log
+the question text alongside every answer in the receipt.
+
+**Can I switch backends without touching code?**
+Yes. That is the point of the `JUDGMENT_BACKEND` switch and of the requirement that
+the request and response contract stay System One compatible.
 
 ---
 
-## 跑通之后
+## After you are connected
 
-你现在**真实拥有**：接过 Jev、能真跑出判断、有真实收据。这时候发布叙事才成立——而且是诚实的：
-
-> "我用 Jev 搭了一套验证流水线，开源了。这是我认为 Jev 用在'判断错了要赔钱'的场景时必须有的四个护城河。"
-
-下一步（可选，让数字变真）：跑一批真实证据（哪怕是你自己造的 20 个真假样本），记录自动通过率、拦截数、成本。**那批数字是你自己跑的，就能光明正大写进帖子。**
+At that point you genuinely have: a Jev connection, a real judgment, and a real
+receipt. The next honest step is to point it at your own evidence and record what it
+does — the auto-approve rate, the fraud it stops, and the cost. Numbers you produced
+yourself are the only ones worth publishing.

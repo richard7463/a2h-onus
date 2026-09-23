@@ -3,7 +3,6 @@
 # ai2human Onus
 
 **The burden of proof is on the evidence.**
-举证靠铁证，不靠自信。
 
 An open verification layer for AI agents. One call turns a claim plus evidence into
 `approved` / `rejected` / `needs_review` — and a receipt anyone can replay.

@@ -1,6 +1,6 @@
 """Step 1 with a real key: call Jev once and print the RAW reply.
 
-    export TYPESAFE_API_KEY=你的key
+    export TYPESAFE_API_KEY=your-key
     python examples/jev_smoke.py
 
 Paste the printed JSON back (NOT the key) so the parser can be checked
@@ -15,7 +15,7 @@ import requests
 
 key = os.environ.get("TYPESAFE_API_KEY") or os.environ.get("JEV_API_KEY")
 if not key:
-    sys.exit("先设置 key:  export TYPESAFE_API_KEY=你的key")
+    sys.exit("no key set - run:  export TYPESAFE_API_KEY=your-key")
 
 base = os.environ.get("JEV_BASE_URL", "https://api.typesafe.ai")
 model = os.environ.get("JEV_MODEL", "jev-1.13.0")
@@ -47,4 +47,6 @@ except ValueError:
     print(r.text[:2000])
 
 if r.status_code == 400 and "model" in r.text.lower():
-    print("\n模型名不对？试试: export JEV_MODEL=jev-1.13  或  jev-latest")
+    print("\nUnknown model? This build accepts the pinned name jev-1.13.0."
+          "\nThe /v1/models endpoint advertises only jev-latest and jev-preview,")
+    print("but the pinned version is what this repository expects.")

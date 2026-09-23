@@ -1,121 +1,158 @@
-# 把 Jev 用在"判断错了有代价"的地方：4 个坑
+# Four traps in putting Jev where a wrong answer costs money
 
-> 这是设计 Onus 时整理的 4 个坑，以及每个坑对应的对策。部分结论来自对真 Jev 的实测，数据见 README。
-> 如果你打算把 Jev 放进任何"判断错了会有真实后果"的地方，先读这个。
+> Four traps collected while designing Onus, and the countermeasure for each. Some
+> conclusions come from measuring real Jev; the numbers are in the README.
+> If you plan to put Jev anywhere a wrong answer has real consequences, read this
+> first.
 
-## 场景
+## The setting
 
-一个例子：你办活动"回复我们的帖子，送 1 美元"，一夜来了 1000 个回复。Onus 帮你先筛：跑题、敷衍的挑出来，只有截图的留给人看，剩下的才进人工复核。
+One example: you run a giveaway — "reply to our post, get $1" — and 1,000 replies
+land overnight. Onus filters first. Off-topic and low-effort replies are flagged,
+screenshot-only evidence goes to a human, and only what is left reaches review.
 
 ```
-提交（一句话 + 证据）→ 代码检查 → Jev 判断 → 代码决定：通过 / 拒绝 / 转人工
+submission (claim + evidence) → code checks → Jev judges → code decides: approve / reject / review
 ```
 
-判断环节由 Jev 完成，其余环节由代码完成。
+Jev does the judging. Code does everything else.
 
 ---
 
-## 坑 1：「零幻觉」是文字游戏
+## Trap 1: "zero hallucination" is a wording trick
 
-每一篇 Jev 安利都在讲"零幻觉"。这句话是真的，但含义和你以为的不一样。
+Every Jev pitch leads with "zero hallucination". The claim is true, but not in the way
+you probably assume.
 
-**它的真实含义**：Jev 不会返回一个你没在 schema 里定义的选项，不会蹦出乱码，不会给你一段没法解析的散文。格式永远合规。
+**What it actually means:** Jev will not return an option outside your schema, will
+not emit garbage, will not hand you prose you cannot parse. The format is always
+valid.
 
-**它不保证的**：那个判断本身是对的。它完全可以用 0.95 的高置信度，选一个 schema 合法但事实错误的选项。
+**What it does not promise:** that the judgment is correct. It can pick a
+schema-valid, factually wrong option at 0.95 confidence.
 
-在验收场景里，这意味着什么？一个 0.95 的错误"通过"，会把钱付给一个根本没干活的骗子。schema 对，不等于判断对。
+In a settlement setting that means a wrong "approved" at 0.95 pays a fraudster who did
+no work. A valid schema is not a correct judgment.
 
-### 对策
+### Countermeasure
 
-我们从不无脑信 Jev 的答案。我们信的是它的**把握程度**，只用来分流：
+Never trust the answer blindly. Trust the **stated confidence**, and use it only to
+triage:
 
-- 高置信 + 证据够硬 → 自动通过
-- 中间带 → 转人工
-- 低置信 → 拒绝
+- high confidence plus strong evidence → auto-approve
+- middle band → human review
+- low confidence → reject
 
-这条"用置信度分流、绝不无脑信"的闸门，就是为了接住 Jev 自信满满但其实错了的判断。
+That gate — triage on confidence, never trust it outright — exists to catch the
+judgments Jev is confident about and wrong about.
 
-一句话记住：**Jev 给你的不是答案，是"我有多确定"。把握程度拿来分流，答案本身永远留个心眼。**
-
----
-
-## 坑 2：别让它算代码能算的
-
-TypeSafe 官方自己公开了一份"模型缺陷清单"，白纸黑字写着：Jev 不会算术、不会数数、看不懂日期先后、东西一多就容易蒙错。它是"认出答案大概长啥样"，不是"真的在一个个数"。
-
-所以像"提交时间戳在不在任务窗口内"这种判断，绝不能丢给 Jev。因为在它眼里，日期就是一串字符，它分不清哪个在前哪个在后。
-
-### 对策
-
-现在我把所有**代码能确定算出来的**，全部抽出来，Jev 碰都不碰：
-
-- 暗号在不在证据里 → 字符串匹配
-- 时间戳对不对、在不在窗口 → 代码比较
-- 这份证据以前交过没 → 哈希去重
-- 金额对不对 → 精确运算
-
-Jev 只干一件它真正擅长的事：判断"这内容像不像真的"。
-
-这不只是准确率问题，是**归责问题**。来历检查归代码、语义判断归模型，两边分开。出错时你立刻知道是哪一层的锅，而不是对着一个黑盒 AI 干瞪眼。
+One line to remember: **Jev does not hand you an answer, it hands you how sure it is.
+Use the certainty to route, and keep your guard up about the answer itself.**
 
 ---
 
-## 坑 3：纯截图，再自信也不能信
+## Trap 2: don't make it compute what code can
 
-我们大量的证据是截图。这是最疼的一个坑。
+TypeSafe publishes its own list of model weaknesses. In plain terms: Jev does not do
+arithmetic, does not count, cannot order dates, and gets confused when there is too
+much in front of it. It recognises what an answer roughly looks like. It is not
+actually counting.
 
-有个叫 TextFake 的研究专门测过：**再强的 AI，看伪造的富文本截图，准确率也就 80% 左右，在对抗性攻击下直接崩到接近随机。** 真图能认对 97%，假图只认得出 38%。
+So a check like "is the submission timestamp inside the task window" must never go to
+Jev. To Jev a date is a string, and it cannot tell which one comes first.
 
-翻译成人话：当 Jev 对一张 P 过的截图给你 0.9 的"这是真的"，**这个 0.9 本身就不可信**。你信了，就正好中了造假者的招。置信度在这里是有害的——它给你一种虚假的安全感。
+### Countermeasure
 
-### 对策
+Pull out everything **code can compute deterministically** and keep it away from Jev:
 
-一条死规矩，写进策略层代码，不可违反：
+- is the nonce in the evidence → string match
+- is the timestamp valid, and in window → code comparison
+- has this evidence been submitted before → hash dedup
+- is the amount correct → exact arithmetic
 
-> **证据等级不够的（纯截图、没账号绑定、没暗号），不管 Jev 多自信，一律不自动放钱。**
+Jev does the one thing it is genuinely good at: judging whether the content looks real.
 
-然后把力气花在**提高证据等级**，而不是"让 AI 看得更准"：
-
-- 能查平台 API 的，绝不看截图（API 直查是 E4，确定性的）
-- 能带任务暗号的，绝不靠肉眼认（暗号是字符串匹配，确定性的）
-- 能要账号签名的，绝不信一张无主的图
-
-**把证据往高等级推，比让模型看得更准，有用一百倍。** 最好的验证，是被任务设计消灭掉的验证。
-
----
-
-## 坑 4：别把身家押在一个闭源 API 上
-
-Jev 很强，但它是闭源的、付费的、而且在高负载下会 529 过载。生产环境里，它挂一次，你整条流水线就停。
-
-更现实的一点：已经有人实测，自己训一个专用小模型，准确率能打平甚至反超 Jev，成本还更低。"只有 Jev 能做这个"是错觉。它卖的不是"最准"，是"够用、又快又便宜"——这个位置，别人可以替代。
-
-### 对策
-
-把判断层做成**可插拔**的。对外说"System One 兼容"，不说"绑定 Jev"：
-
-- 默认可以切开源的 kev（本地跑、零成本、API 兼容）
-- Jev 429/529 时自动降级，不让单点故障拖垮全线
-- 版本必须钉死（拒绝 `latest`），每个判断都记下用的是哪个模型
-
-最关键的一点：**你在生产里攒下的每一条判断日志，才是你真正的护城河。** 有了足够的标注数据，你可以训练自己的判断模型，把闭源 API 换掉。引擎随便换，你的流水线和数据不动。
+This is not only an accuracy question, it is an **attribution question**. Provenance
+checks belong to code, semantic judgment belongs to the model, and the two stay apart.
+When something goes wrong you know immediately which layer is at fault, instead of
+staring at a black box.
 
 ---
 
-## 总结
+## Trap 3: a bare screenshot is never trustworthy, however confident
 
-Jev 是"快而糙的直觉"（System One），不是"可靠的裁判"。把它放对位置——
+A lot of evidence arrives as screenshots. This was the most expensive trap.
 
-- **它判断**，代码兜底能算的
-- **人看疑难**，中间带才上人工
-- **证据分等级**，低等级永不自动放行
-- **后端可换**，日志攒成自己的模型
+A study called TextFake measured exactly this: **even the strongest models top out
+around 80% on forged rich-text screenshots, and collapse towards random under
+adversarial attack.** Real screenshots are identified 97% of the time; forged ones
+only 38%.
 
-放对了，它能让"验证一件现实世界的事"便宜到几乎免费，让以前不值得验证的活变得可验证。
+In plain language: when Jev tells you a photoshopped screenshot is real at 0.9,
+**that 0.9 is not trustworthy**. Believing it is exactly what the forger is counting
+on. Confidence is actively harmful here, because it hands you a false sense of safety.
 
-放错了——它会用 0.95 的置信度，自信地帮你把钱付给骗子。
+### Countermeasure
+
+One rule, written into the policy layer, not overridable:
+
+> **Evidence below the grade threshold — a bare screenshot, no account binding, no
+> task code — never releases money automatically, however confident Jev is.**
+
+Then spend the effort on **raising the evidence grade**, not on making the model see
+better:
+
+- if you can query the platform API, never look at a screenshot (an API check is E4,
+  deterministic)
+- if you can require a task code, never rely on the eye (a nonce is a string match,
+  deterministic)
+- if you can require an account signature, never trust an unowned image
+
+**Pushing evidence up the grade scale beats making the model more accurate, by a wide
+margin.** The best verification is the verification the task design made unnecessary.
 
 ---
 
-*代码在这个仓库里，MIT 协议。Clone 走，改成你自己的。*
-*别人用 Jev 打分。Onus 先问：这份证据配不配被相信。*
+## Trap 4: don't bet the pipeline on one closed API
+
+Jev is strong, but it is closed, paid, and returns 529 under load. In production one
+outage stops the whole line.
+
+More to the point: people have already measured that a small purpose-trained model can
+match or beat Jev at lower cost. "Only Jev can do this" is an illusion. What it sells
+is not "most accurate" but "good enough, fast and cheap" — a position others can take.
+
+### Countermeasure
+
+Make the judgment layer **pluggable**. Say "System One compatible", not "tied to Jev":
+
+- default to the open-source `kev` (local, free, API compatible)
+- fall back automatically on Jev 429/529 so one outage does not take the line down
+- pin the version (reject `latest`) and record which model answered every judgment
+
+Most important: **the judgment logs you accumulate in production are the real moat.**
+With enough labelled data you can train your own judgment model and drop the closed
+API. Swap the engine, keep the pipeline and the data.
+
+---
+
+## Summary
+
+Jev is fast, rough intuition (System One), not a reliable referee. Put it in the right
+place:
+
+- **it judges**, and code handles what can be computed
+- **humans take the hard cases**, the middle band goes to review
+- **evidence is graded**, and low grades never auto-pass
+- **the backend is swappable**, and the logs become your own model
+
+Placed correctly, it makes verifying a real-world claim cheap enough to be routine,
+and makes work that was never worth verifying verifiable.
+
+Placed wrongly, it will confidently pay your money to a fraudster at 0.95.
+
+---
+
+*The code is in this repository, MIT. Clone it, change it, ship your own.*
+*Everyone else uses Jev to score things. Onus asks first: does this evidence deserve to
+be believed.*
