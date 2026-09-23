@@ -1,30 +1,73 @@
+<div align="center">
+
 # ai2human Onus
 
-*A2H Onus · 铁证 — by [ai2human](https://ai2human.io)*
+**The burden of proof is on the evidence.**
+举证靠铁证，不靠自信。
 
-> **The burden of proof is on the evidence.** 举证靠铁证，不靠自信。
+An open verification layer for AI agents. One call turns a claim plus evidence into
+`approved` / `rejected` / `needs_review` — and a receipt anyone can replay.
 
-**An open verification engine for AI agents — one call turns a claim + evidence into a verdict and a replayable receipt. Built on Jev/System One, with the guardrails production needs.**
+[![License: MIT](https://img.shields.io/badge/License-MIT-22C55E.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-4CC9F0.svg)](pyproject.toml)
+[![MCP native](https://img.shields.io/badge/MCP-native-8B5CF6.svg)](#call-it-from-an-agent)
+[![Judge: jev-1.13.0](https://img.shields.io/badge/judge-jev--1.13.0-0EA5E9.svg)](#measured-on-live-jev)
+[![Evidence grades E0-E4](https://img.shields.io/badge/evidence%20grades-E0%E2%80%93E4-F59E0B.svg)](#how-it-works)
 
-> Your agent says the task is done. Do you believe it?
-> Self-reported logs can't be trusted. Sending every output to a frontier model to review is slow and costs more than the task. Onus is the layer in between: `verify_claim(claim, evidence)` → `approved | rejected | needs_review` + a receipt anyone can replay.
+![ai2human Onus — 10-second walkthrough](assets/onus-hero.gif)
+
+[▶ Watch the full 50-second film](https://github.com/richard7463/a2h-onus/releases/download/v0.1.0/a2h-onus-promo-en.mp4)
+· [Quickstart](#quickstart)
+· [How it works](#how-it-works)
+· [Measured on live Jev](#measured-on-live-jev)
+· [Known limitations](#known-limitations-read-before-relying-on-it)
+
+</div>
 
 ---
+
+You run a giveaway: *"Reply to our post, get $1."*
+Overnight you get 1,000 replies. Half are `gm`, ads, bots, copy-paste.
+
+An LLM review is slow and pricey. Doing it by hand takes all day. Paying out on
+self-reported proof means paying the fakers first.
+
+Onus is the layer in between. It grades the evidence, asks a judge only what a judge
+is good at, and keeps the decision in code.
+
+```python
+from a2h_onus import verify_claim
+
+verify_claim(claim, evidence, acceptance_criteria, value_usd, nonce)
+# -> {"verdict": "approved", "evidence_grade": "E3", "receipt": {...}}
+```
 
 ## Why this exists
 
-Agents produce claims all day — "tests pass", "the post is live", "the payment cleared", "the record matches". Something has to decide whether each claim is true before code acts on it. Today that's either brittle hand-written rules or an expensive LLM call that still gets forged evidence wrong.
+Agents produce claims all day — *"tests pass"*, *"the post is live"*, *"the payment
+cleared"*. Something has to decide whether each claim is true before code acts on it.
+Today that is either brittle hand-written rules, or an expensive model call that
+still gets forged evidence wrong.
 
-Onus makes verification a **primitive**: call it, get a typed verdict and a receipt. It uses Jev for the semantic judgment — and it's designed around the fact that **Jev will sometimes be confidently wrong**. That assumption is the whole point:
+Onus makes verification a **primitive**. It uses [Jev](https://typesafe.ai/) for the
+semantic judgment, and it is built around the fact that **Jev will sometimes be
+confidently wrong**:
 
-1. **"Zero hallucination" is a wording trick.** Jev can't return an option outside your schema. It *can* confidently pick the wrong valid one. A 0.95 wrong verdict is still wrong.
-2. **Don't let it compute what code can.** Nonce checks, timestamps, hash dedup — deterministic code, never the model.
-3. **Confidence can't rescue weak evidence.** Forged-image detection tops ~80% even for frontier models. So evidence below a binding threshold never auto-passes, no matter the score.
-4. **No single closed API is load-bearing.** The judgment backend is swappable: Jev, kev (local, free), or a model you train on your own logs.
+1. **"Zero hallucination" is a wording trick.** Jev cannot return an option outside
+   your schema. It *can* confidently pick the wrong valid one. A 0.95 wrong verdict
+   is still wrong.
+2. **Don't let a model compute what code can.** Nonce checks, timestamps, hash
+   dedup — deterministic code, never the model.
+3. **Confidence cannot rescue weak evidence.** Forged-image detection tops ~80% even
+   for frontier models, so evidence below a binding threshold never auto-passes, no
+   matter the score.
+4. **No single closed API is load-bearing.** The judge is swappable: Jev, `kev`
+   (local, free), or a model you train on your own logs.
 
----
+## How it works
 
-## The architecture: four layers, each does one job
+Four layers, each with one job. Only two of them can decide anything, and neither is
+a model.
 
 ```
 verify_claim(claim, evidence)
@@ -53,21 +96,22 @@ verify_claim(claim, evidence)
   verdict + confidence + replayable receipt
 ```
 
-**The design rules, one line each:**
+The design rules, one line each:
 
-- **Provenance in code, semantics in the model.** What a string match or a chain query can settle, the model never sees.
+- **Provenance in code, semantics in the model.** What a string match or a chain
+  query can settle, the model never sees.
 - **Judgment ≠ settlement.** The model outputs probabilities. Code decides the money.
-- **The grade gate is absolute.** Evidence below E3 never auto-passes, no matter how confident Jev is.
-- **The backend is pluggable.** `JUDGMENT_BACKEND=kev` (local, free) or `jev`. Speak "System One-compatible", not "Jev".
-- **Every verdict ships a receipt.** Grade, model version, full distribution, hash. Anyone can replay *why* it passed.
-
----
+- **The grade gate is absolute.** Evidence below E3 never auto-passes, however
+  confident the judge is.
+- **The backend is pluggable.** Speak "System One compatible", not "Jev".
+- **Every verdict ships a receipt.** Grade, model version, full distribution, hash.
 
 ## Quickstart
 
 ```bash
 git clone https://github.com/richard7463/a2h-onus
 cd a2h-onus
+python3 -m venv .venv && source .venv/bin/activate
 pip install -e .
 
 # runs offline out of the box with a mock judge (no key, no server):
@@ -76,44 +120,64 @@ JUDGMENT_BACKEND=mock python examples/verify_onchain.py   # E4, no model call
 JUDGMENT_BACKEND=mock python examples/grade_gate_demo.py  # E1 @0.99 → review
 ```
 
-**To run a real Jev judgment** (no TypeSafe waitlist needed — via OpenRouter):
+To run a real Jev judgment, point it at TypeSafe and pin the model version:
 
 ```bash
 export JUDGMENT_BACKEND=jev
-export JEV_BASE_URL=https://openrouter.ai/api
-export JEV_API_KEY=sk-or-...        # your OpenRouter key
-export JEV_MODEL=jev-1.13.0           # pinned; never 'latest'
-python examples/verify_x_post.py
+export TYPESAFE_API_KEY=...        # your own key; never commit it
+export JEV_MODEL=jev-1.13.0        # pinned; never 'latest'
+python examples/jev_smoke.py
 ```
 
-Full walkthrough — key, first curl, first real receipt: [`docs/connect-jev.md`](docs/connect-jev.md).
+Full walkthrough — key, first raw call, first real receipt: [`docs/connect-jev.md`](docs/connect-jev.md).
 
-As an MCP tool any agent can call:
+## Call it from an agent
+
+Onus is MCP-native. Any MCP client — Claude, Codex, and others — can call
+`verify_claim` directly; no account, no REST schema to read.
 
 ```bash
-python -m a2h_onus.mcp_server   # exposes verify_claim over MCP
+pip install -e ".[mcp]"
+python -m a2h_onus.mcp_server
 ```
 
----
+Two tools are exposed: `verify_claim` for one claim, `verify_batch` for many. Batch
+mode returns per-item verdicts plus `auto_approve_rate`, `review_rate` and
+`reject_rate` — the numbers a dashboard needs.
 
-## Measured on live Jev (jev-1.13.0, 2026-09-23)
+## Measured on live Jev
 
-| metric | value |
-|---|---|
-| judgment latency | ~0.4 s per check (30-case A/B set: 11.6–13.0 s total) |
-| tokens per check | ~520–570 input on the `x_post` / `text` / `url` packs; ~390 on the 3-question smoke set |
-| cost | ~$0.02 per 1,000 checks (at $0.042 / M input tokens, output free) |
-| off-topic / low-effort submissions caught | 5/5 |
-| pass threshold | 0.55, calibrated on the 30-case gate A/B set (`tests/gate_ab_bench.py`) — see note below |
+Model `jev-1.13.0`, measured 2026-09-23. **Every number below was produced by the
+code in this repository** — nothing here is estimated or projected.
 
-**On the pass threshold.** Genuine submissions score 0.51–0.56, right on the
-0.55 bar, so the auto-approve rate is noisy: four consecutive runs on
-2026-09-23 gave 2, 3, 4 and 4 genuine approvals out of 10. The fraud figure is
-stable: judge-alone approved 1/20 fraudulent submissions (5%) in every run, and
-0/20 once the evidence-grade gate applies. Treat the auto-approve rate as
-uncalibrated until it has a larger sample.
+| metric | value | reproduce with |
+|---|---|---|
+| judgment latency | ~0.4 s per check | `python examples/jev_smoke.py` |
+| input tokens per check | ~520–570 on the `x_post` / `text` / `url` packs | `examples/jev_smoke.py` |
+| cost | ~$0.02 per 1,000 checks | same call, `usage.input_tokens` |
+| off-topic submissions caught | 5 / 5 | `python -m tests.gate_ab_bench` |
+| fraud auto-approved by the model alone | 1 / 20 | `python -m tests.gate_ab_bench` |
+| fraud auto-approved with the grade gate | **0 / 20** | `python -m tests.gate_ab_bench` |
+| deterministic-layer routing | 700 / 700 | `JUDGMENT_BACKEND=mock python -m tests.run_benchmark_large` |
+| deterministic-layer latency | mean 0.72 ms, p95 1.25 ms | same |
 
-Small sample, reported as measured. Re-run `python -m tests.gate_ab_bench` with your own key to reproduce.
+### The number that matters
+
+Across the 30-case A/B set, the judge on its own let **one forgery through**. It
+scored that forgery **0.90** — a confident, schema-valid, wrong answer. The evidence
+grade behind it was `E1`, so the gate refused to auto-pass it and routed it to a
+human instead. **0 / 20 with the gate.**
+
+That is the whole argument for this repository: the model is not the safety
+mechanism. The grade gate is.
+
+### On the pass threshold
+
+Genuine submissions score 0.51–0.56, sitting right on the 0.55 bar, so the
+auto-approve rate is noisy: four consecutive runs gave 2, 3, 4 and 4 genuine
+approvals out of 10. The fraud figure is stable — 1/20 by the model alone, 0/20 with
+the gate, in every run. Treat the auto-approve rate as uncalibrated until it has a
+larger sample.
 
 ## Known limitations (read before relying on it)
 
@@ -125,24 +189,27 @@ This is an early release. Be clear about what it does **not** do yet:
 - **Duplicate detection is exact-match.** Change one character and it's a new hash.
 - **No image understanding.** Screenshots always route to human review.
 
-What it *is* good for today: a cheap first-pass filter — flag off-topic and low-effort submissions, never auto-approve screenshots, and send humans only what's left.
+What it *is* good for today: a cheap first-pass filter — flag off-topic and
+low-effort submissions, never auto-approve screenshots, and send humans only what is
+left.
 
----
+## Why the guardrails, specifically
 
-## The four traps, in detail
-
-See [`docs/four-traps.md`](docs/four-traps.md) — the long version, with the specific failure each guardrail was built to catch.
-
----
+The long version, with the failure each guardrail was built to catch:
+[`docs/four-traps.md`](docs/four-traps.md). It covers the four traps that cost real
+money to learn — "zero hallucination" as a wording trick, letting the model compute
+what code can, trusting a confident score on a screenshot, and betting the pipeline
+on one closed API.
 
 ## What this is not
 
-- Not a task marketplace and not settlement — it decides *whether* a claim holds; what you do with the verdict is yours.
-- Not an image forensics tool — L2 perception isn't in this release; image evidence routes to review.
-- Not tied to Jev — kev, NanoJev, or a model you train on your own logs all drop in.
-
----
+- Not a task marketplace and not settlement — it decides *whether* a claim holds;
+  what you do with the verdict is yours.
+- Not an image forensics tool — L2 perception is not in this release; image evidence
+  routes to review.
+- Not tied to Jev — `kev`, NanoJev, or a model you train on your own logs all drop in.
 
 ## License
 
-MIT. Clone it, gut it, ship your own. The judgment logs you accumulate are the real moat — not this code.
+MIT. Clone it, gut it, ship your own. The judgment logs you accumulate are the real
+moat — not this code.
