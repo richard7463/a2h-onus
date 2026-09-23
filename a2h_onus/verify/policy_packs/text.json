@@ -1,0 +1,47 @@
+{
+  "pack": "text-claim/v1",
+  "evidence_type": "text",
+  "version_note": "Lowest-assurance path. Plain text or structured data with no cryptographic binding. Grade caps at E1/E2. Per the grade gate, this path can essentially NEVER auto-pass — it routes to needs_review. The judgment here informs the human reviewer; it does not release funds. Keep this pack honest about that.",
+  "deterministic_precheck": [
+    "artifact_hash not in dedup store",
+    "required fields present (for structured evidence)",
+    "any embedded nonce matched (string, L1)"
+  ],
+  "grade_note": "Without identity binding or a nonce, effective grade stays E1. With a matched nonce but no identity, E2 at best. Either way < E3 -> grade gate -> needs_review. Do not let a high posterior override this.",
+  "state_template": {
+    "claim": "<claim>",
+    "acceptance_criteria": [
+      "<criterion>"
+    ],
+    "evidence_content": "<the text or structured data>",
+    "l1_signals": {
+      "nonce_present": false,
+      "identity_bound": false,
+      "fields_complete": true
+    }
+  },
+  "questions": {
+    "internally_consistent": {
+      "type": "noul",
+      "instructions": "Is the text/data internally consistent and free of contradictions, rather than self-contradictory or implausible on its face?"
+    },
+    "criteria_met": {
+      "type": "noul",
+      "instructions": "Taking the content at face value, does it describe work that would satisfy the acceptance criteria? (This does NOT establish that the work happened — only that the description matches the requirement.)"
+    },
+    "review_priority": {
+      "type": "score",
+      "instructions": "How much human scrutiny does this need before it could ever be trusted?",
+      "criteria": [
+        "clearly insufficient as evidence; likely reject",
+        "needs careful human review",
+        "plausible; light human confirmation",
+        "strong for text-only, but still needs binding to trust"
+      ]
+    }
+  },
+  "posterior_rule": {
+    "overall": "min(P(internally_consistent), P(criteria_met))",
+    "note": "Informational only. Verdict is needs_review by grade gate regardless of this value, unless L1 hard-rejects. The posterior is attached to the reviewer's view as decision support."
+  }
+}

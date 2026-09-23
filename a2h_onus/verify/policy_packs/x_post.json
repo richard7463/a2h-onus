@@ -1,0 +1,56 @@
+{
+  "pack": "x-post/v1",
+  "evidence_type": "x_post",
+  "version_note": "questions are code: version them, log the text with every answer, re-run the eval set when model or rubric changes. Wording IS the tuning knob (criteria text = the decision model's prompt).",
+  "deterministic_precheck": [
+    "nonce string present in extracted post text (L1, not model)",
+    "post URL resolves and belongs to target thread (L1 / API when E4)",
+    "artifact_hash not in dedup store (L1)",
+    "submission timestamp within task window (L1)"
+  ],
+  "state_template": {
+    "claim": "<the operator's claim>",
+    "acceptance_criteria": [
+      "<criterion 1>",
+      "<criterion 2>"
+    ],
+    "evidence_content": "<post text / structured observation of the post>",
+    "l1_signals": {
+      "nonce_present": true,
+      "identity_bound": true,
+      "api_verified": false
+    },
+    "operator": {
+      "tier": 2,
+      "recent_rejects": 0
+    }
+  },
+  "questions": {
+    "criteria_met": {
+      "type": "noul",
+      "instructions": "Given the evidence content and acceptance criteria in the state, does the post satisfy ALL of the acceptance criteria? Answer only about whether the stated requirements are met, not about authenticity."
+    },
+    "content_genuine": {
+      "type": "noul",
+      "instructions": "Does the evidence present a genuine, unedited social post interaction, rather than a synthetic, spliced, or fabricated one? Base this only on the structured signals available; do not assume."
+    },
+    "on_topic": {
+      "type": "noul",
+      "instructions": "Is the post content actually about the subject the task required, rather than off-topic filler that merely contains the required string?"
+    },
+    "evidence_quality": {
+      "type": "score",
+      "instructions": "Overall credibility of this evidence as proof the required post was made.",
+      "criteria": [
+        "obviously fabricated or contradictory",
+        "suspicious; multiple weak signals",
+        "plausible; minor gaps",
+        "highly credible; consistent signals"
+      ]
+    }
+  },
+  "posterior_rule": {
+    "overall": "min(P(criteria_met), P(content_genuine), P(on_topic))",
+    "note": "conjunctive: the weakest independent criterion caps the posterior. Do NOT average — averaging lets one strong signal mask a failing one."
+  }
+}

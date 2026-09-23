@@ -1,0 +1,44 @@
+{
+  "pack": "onchain-tx/v1",
+  "evidence_type": "onchain_tx",
+  "version_note": "This pack is mostly deterministic. On-chain facts are E4: verify by querying the chain, NOT by asking a model. The judgment layer only handles the residual semantic question (does the tx purpose match the claim), and only when the deterministic checks cannot fully settle it.",
+  "deterministic_precheck": [
+    "tx hash exists on the declared chain (RPC query, L1) — MUST pass or hard reject",
+    "tx is confirmed (>= N confirmations, configurable)",
+    "from/to addresses match the declared wallet(s)",
+    "amount matches the claimed amount (exact arithmetic, code — never a model)",
+    "block height / timestamp within task window",
+    "wallet signature over challenge nonce is valid (identity binding)"
+  ],
+  "skip_judgment_when": "all deterministic checks pass AND the claim is a pure factual assertion about the transaction (amount, address, holding, block). In that case: verdict = approved deterministically, model_id = 'deterministic', judgment layer is NOT invoked. This is the near-zero-cost path.",
+  "state_template": {
+    "claim": "<claim, e.g. held >= 100 USDC at block X>",
+    "acceptance_criteria": ["<criterion>"],
+    "evidence_content": {
+      "tx_hash": "0x...",
+      "chain": "base",
+      "from": "0x...",
+      "to": "0x...",
+      "amount": "247.50",
+      "token": "USDC",
+      "block": 18442000,
+      "deterministic_result": "PASS | FAIL"
+    },
+    "l1_signals": {
+      "tx_confirmed": true,
+      "amount_matches": true,
+      "identity_bound": true,
+      "api_verified": true
+    }
+  },
+  "questions": {
+    "purpose_matches": {
+      "type": "noul",
+      "instructions": "The transaction facts are already verified deterministically (see state.l1_signals). Given the claim, does the PURPOSE of this transaction match what the task required (e.g. a payment for the right thing, to the right counterparty for this task), rather than an unrelated transfer that merely happens to satisfy the numbers?"
+    }
+  },
+  "posterior_rule": {
+    "overall": "1.0 when judgment skipped (deterministic pass); else P(purpose_matches) gated by deterministic result",
+    "note": "If any deterministic check fails, hard reject in L1 — never let the model 'rescue' a transaction whose on-chain facts don't hold."
+  }
+}

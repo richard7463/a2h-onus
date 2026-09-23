@@ -1,0 +1,52 @@
+{
+  "pack": "url-resource/v1",
+  "evidence_type": "url",
+  "version_note": "For claims backed by a fetchable web resource (a published page, a PR, a commit, a listing). When the platform has an API (GitHub, X), prefer E4 API query over fetching HTML. Judgment only runs on the fetched/extracted text content, never on raw pixels.",
+  "deterministic_precheck": [
+    "URL resolves (HTTP 2xx) and is on an allowed domain (L1)",
+    "content fetched and reduced to text (L1 fetch, not model)",
+    "nonce present in fetched text when a nonce was issued",
+    "artifact_hash of fetched content not in dedup store",
+    "if platform API available: cross-check the resource via API (E4) instead of trusting HTML"
+  ],
+  "state_template": {
+    "claim": "<claim>",
+    "acceptance_criteria": [
+      "<criterion>"
+    ],
+    "evidence_content": "<text extracted from the URL>",
+    "l1_signals": {
+      "url_resolves": true,
+      "nonce_present": true,
+      "api_cross_checked": false
+    }
+  },
+  "questions": {
+    "criteria_met": {
+      "type": "noul",
+      "instructions": "Does the fetched content satisfy ALL of the acceptance criteria stated in state? Judge only whether the requirements are met."
+    },
+    "content_authored": {
+      "type": "noul",
+      "instructions": "Does the content appear genuinely authored/published as claimed, rather than a placeholder, a draft, an unrelated page, or a page constructed only to pass this check?"
+    },
+    "supports_claim": {
+      "type": "noul",
+      "instructions": "Does the fetched content actually SUPPORT the specific claim being made, rather than merely being topically related to it?"
+    },
+    "evidence_quality": {
+      "type": "score",
+      "instructions": "Overall credibility of this URL as proof of the claim.",
+      "criteria": [
+        "does not support the claim / wrong page",
+        "weakly related, gaps",
+        "supports with minor gaps",
+        "clearly and fully supports"
+      ]
+    }
+  },
+  "posterior_rule": {
+    "overall": "min(P(criteria_met), P(content_authored), P(supports_claim))",
+    "note": "conjunctive. A page that is authored but does not support the claim must not pass."
+  }
+}
