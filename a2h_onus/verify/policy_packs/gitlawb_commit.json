@@ -1,0 +1,53 @@
+{
+  "pack": "gitlawb-commit/v1",
+  "evidence_type": "gitlawb_commit",
+  "version_note": "questions are code: version them, log the text with every answer, and re-run the eval set whenever the model or the rubric changes. Wording IS the tuning knob.",
+  "deterministic_precheck": [
+    "owner is a well-formed gitlawb DID (did:key:z6Mk...)",
+    "the repo record is readable on the public node",
+    "the exact commit hash appears in the repo's commit list",
+    "a signed ref-update certificate exists for the push"
+  ],
+  "note_on_grades": "When the node confirms the exact hash under the exact owner, provenance declares E4 and the deterministic fast path returns without calling the model at all: existence is a fact, not a judgment. This pack is used only for the unverified path, where the claim is about meaning rather than existence.",
+  "state_template": {
+    "claim": "<the operator's claim about the gitlawb work>",
+    "acceptance_criteria": [
+      "<criterion 1>"
+    ],
+    "evidence_content": {
+      "owner": "did:key:z6Mk...",
+      "repo": "<repo name>",
+      "sha": "<commit hash>",
+      "commit_message": "<message as returned by the node>"
+    },
+    "l1_signals": {
+      "gitlawb_repo_found": false,
+      "gitlawb_commit_found": false,
+      "api_verified": false
+    }
+  },
+  "questions": {
+    "commit_addresses_claim": {
+      "type": "noul",
+      "instructions": "Given the claim, the acceptance criteria, and the commit message in the state, does this commit plausibly address what the claim says was done? Answer only about whether the message describes the required work. Do not infer quality from the repository's popularity, size, or author."
+    },
+    "not_a_replay": {
+      "type": "noul",
+      "instructions": "Does the evidence describe a distinct piece of work, rather than the same commit resubmitted, a template commit, or a message that could describe any repository at all?"
+    },
+    "evidence_quality": {
+      "type": "score",
+      "instructions": "Overall credibility of this commit record as proof that the claimed work was performed on this repository.",
+      "criteria": [
+        "contradictory or clearly unrelated to the claim",
+        "weak; message and claim barely overlap",
+        "plausible; message matches the claim with minor gaps",
+        "highly credible; message directly and specifically matches the claim"
+      ]
+    }
+  },
+  "posterior_rule": {
+    "overall": "min(P(commit_addresses_claim), P(not_a_replay))",
+    "note": "conjunctive: the weakest independent criterion caps the posterior. Do NOT average."
+  }
+}

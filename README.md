@@ -144,6 +144,45 @@ Two tools are exposed: `verify_claim` for one claim, `verify_batch` for many. Ba
 mode returns per-item verdicts plus `auto_approve_rate`, `review_rate` and
 `reject_rate` — the numbers a dashboard needs.
 
+## Verify a gitlawb record
+
+Onus reads [gitlawb](https://gitlawb.com), the decentralized agent-native git
+network, as an evidence source. Public repositories are readable over the node's
+HTTP API with no keypair and no registration, so **"this commit exists under this
+owner" is a fact code can settle without asking a model at all**.
+
+```bash
+python examples/verify_gitlawb.py
+```
+
+```python
+verify_claim(
+    claim="Commit 4249f27 was pushed to a2h-onus by the repo owner",
+    evidence={"type": "gitlawb_commit",
+              "content": {"owner": "z6Mk...", "repo": "a2h-onus", "sha": "4249f27..."}},
+)
+# -> evidence_grade E4, verdict approved, receipt.model_id "deterministic"
+```
+
+This is the E4 deterministic path with a real data source behind it. A confirmed
+record returns without a model call; a record that does not check out is downgraded
+to `E1` and routed to review. The check fails closed — any network or parse error
+means *not verified*, never *verified*.
+
+Endpoints read (all verified against a live node):
+
+| endpoint | used for |
+|---|---|
+| `/api/v1/repos/{owner}/{repo}` | repository record exists |
+| `/api/v1/repos/{owner}/{repo}/commits` | exact commit hash present |
+| `/api/v1/repos/{owner}/{repo}/certs` | signed ref-update certificates |
+| `/api/v1/repos/{owner}/{repo}/pulls` | pull request state |
+
+**What this proves, and what it does not.** It proves the record exists on the
+network under that owner with that hash. It says nothing about whether the work in
+the commit is correct, useful, or honest — that is a judgment, and judgments stay in
+the judge layer one step up.
+
 ## Measured on live Jev
 
 Model `jev-1.13.0`, measured 2026-09-23. **Every number below was produced by the
@@ -187,6 +226,7 @@ This is an early release. Be clear about what it does **not** do yet:
 - **On-chain checks are stubbed.** The E4 path exists, but the RPC lookup is not wired in.
 - **Duplicate detection is exact-match.** Change one character and it's a new hash.
 - **No image understanding.** Screenshots always route to human review.
+- **gitlawb verification covers records, not quality.** The node confirms that a commit exists under an owner; it cannot tell you whether the work is any good. Treat a gitlawb pass as "this happened", not "this was worth paying for".
 
 What it *is* good for today: a cheap first-pass filter — flag off-topic and
 low-effort submissions, never auto-approve screenshots, and send humans only what is

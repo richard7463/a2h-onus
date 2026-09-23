@@ -11,6 +11,8 @@ import sqlite3
 import os
 from datetime import datetime, timezone, timedelta
 
+from . import gitlawb
+
 GRADE_ORDER = {"E0": 0, "E1": 1, "E2": 2, "E3": 3, "E4": 4}
 
 DEDUP_DB = os.environ.get("DEDUP_DB", "./verify_dedup.sqlite")
@@ -75,6 +77,13 @@ def run_provenance(claim: str, evidence: dict, nonce: str | None,
         "api_verified": False, # set True only after a real API/RPC cross-check
     }
 
+    # --- gitlawb: a real API cross-check, and the only one wired today ---
+    # A public node read needs no keypair, so we can confirm that a specific
+    # commit exists under a specific owner. That proves the record, not the
+    # quality of the work. Any failure leaves api_verified False: fail closed.
+    if etype == "gitlawb_commit" and gitlawb.enabled():
+        signals.update(gitlawb.check(content if isinstance(content, dict) else {}))
+
     # --- declared grade from evidence type (before downgrade) ---
     # E2 is NOT granted just because an artifact_hash exists — every submission
     # has one (we compute it). E2 requires genuine structured metadata on
@@ -89,6 +98,8 @@ def run_provenance(claim: str, evidence: dict, nonce: str | None,
 
     if etype in ("onchain_tx", "x_post"):
         declared = "E4"   # only if you actually cross-check via API/RPC below
+    elif etype == "gitlawb_commit":
+        declared = "E4" if signals.get("api_verified") else "E1"
     elif nonce and signals["nonce_present"] and signals["identity_bound"]:
         declared = "E3"
     elif etype == "image":
@@ -113,9 +124,10 @@ def run_provenance(claim: str, evidence: dict, nonce: str | None,
         return {"grade": declared, "declared_grade": declared, "provenance_pass": False,
                 "hard_reason": "duplicate_evidence", "signals": signals}
 
-    # --- TODO: real API/RPC cross-check for E4 ---
-    # For onchain_tx: query chain, verify tx hash / amount / address -> signals["api_verified"]=True
-    # For x_post:     query platform API, verify post exists under target thread
+    # --- cross-check for E4 ---
+    # gitlawb_commit is cross-checked above. Still TODO:
+    #   For onchain_tx: query chain, verify tx hash / amount / address
+    #   For x_post:     query platform API, verify post exists under target thread
     # If cross-check unavailable, DOWNGRADE (do not claim E4 you can't prove).
     if declared == "E4" and not signals["api_verified"]:
         declared = "E3" if (signals["nonce_present"] and signals["identity_bound"]) else "E1"

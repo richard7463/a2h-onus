@@ -27,6 +27,7 @@ def _load_pack(evidence_type: str) -> dict:
         "url": "url.json",
         "text": "text.json",
         "structured": "text.json",
+        "gitlawb_commit": "gitlawb_commit.json",
     }.get(evidence_type, "text.json")
     return json.loads((_PACK_DIR / fname).read_text(encoding="utf-8"))
 
