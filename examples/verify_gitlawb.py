@@ -1,13 +1,16 @@
-"""gitlawb evidence: read the public node, verify a real record, no model call.
+"""gitlawb evidence: what a signed push record actually proves, settled in code.
 
-Two claims against the same repository:
+Three claims against the same repository:
 
-  1. a commit hash that is actually on the network  -> E4, settled in code
-  2. a commit hash that is not                      -> downgraded, needs review
+  1. the tip of a signed push, by the owner   -> E4, no model call
+  2. a commit that is on the branch, but no certificate names it
+                                              -> record only, routed to review
+  3. a hash that is not on the network at all -> rejected / review
 
-The point is the first one. A public gitlawb read needs no keypair, so
-"this commit exists under this owner" is a fact code can settle without asking
-a model at all. It proves the record, not the quality of the work.
+The middle one is the point. gitlawb signs every push, and each certificate
+carries a ``pusher_did`` separately from the owner DID — so "a record exists" and
+"the owner is accountable for it" are two different checks, and most pipelines
+only do the first.
 """
 import json
 import os
@@ -26,16 +29,26 @@ if not commits:
     raise SystemExit(f"could not read {OWNER}/{REPO} from {NODE} - "
                      "check the node and that GITLAWB_CHECK is not 0")
 
-real_sha = commits[0]["hash"]
+real_sha = commits[0]["hash"]                      # tip of the last signed push
 fake_sha = "0" * 40
+
+# A commit that is genuinely on the branch but no certificate names it. Pick it
+# by asking, rather than assuming position in the list — a tag push also produces
+# a certificate, so "oldest commit" is not a safe guess.
+older_sha = next((c["hash"] for c in commits[1:]
+                  if gitlawb.cert_for(OWNER, REPO, c["hash"], NODE) is None), None)
 
 print(f"node: {NODE}")
 print(f"repo: {OWNER}/{REPO}  ({len(commits)} commits visible)")
 print(f"head: {real_sha[:12]}  {commits[0]['message'][:64]}")
 print()
 
-for label, sha in (("exists on the network", real_sha),
-                   ("does not exist", fake_sha)):
+cases = [("tip of a signed push, by the owner", real_sha)]
+if older_sha:
+    cases.append(("on the branch, but no certificate names it", older_sha))
+cases.append(("not on the network at all", fake_sha))
+
+for label, sha in cases:
     result = verify_claim(
         claim=f"Commit {sha[:12]} was pushed to {REPO} by the repo owner",
         evidence={
@@ -54,6 +67,8 @@ for label, sha in (("exists on the network", real_sha),
     print(f"    receipt hash    {result['receipt']['hash'][:22]}...")
     print()
 
-print(json.dumps({"note": "the E4 path never called a model; the E1 path was "
-                          "routed to review because the record did not check out"},
+print(json.dumps({"note": "only the first reached E4, and it never called a model. "
+                          "The second is real but unattributable from the "
+                          "certificate list, so it is downgraded rather than "
+                          "assumed; the third does not exist."},
                  indent=2))

@@ -148,8 +148,16 @@ mode returns per-item verdicts plus `auto_approve_rate`, `review_rate` and
 
 Onus reads [gitlawb](https://gitlawb.com), the decentralized agent-native git
 network, as an evidence source. Public repositories are readable over the node's
-HTTP API with no keypair and no registration, so **"this commit exists under this
-owner" is a fact code can settle without asking a model at all**.
+HTTP API with no keypair and no registration, so a signed push record can be
+settled in code without asking a model at all.
+
+gitlawb signs every push. That raises an obvious question the certificate list
+answers directly: **who pushed it?** Each ref-update certificate carries a
+`pusher_did` separately from the repository's owner DID — so "a signed record
+exists" and "the owner is accountable for it" are two different checks, and most
+pipelines only do the first.
+
+Onus requires **both**, plus a certificate that names this exact commit:
 
 ```bash
 python examples/verify_gitlawb.py
@@ -157,17 +165,23 @@ python examples/verify_gitlawb.py
 
 ```python
 verify_claim(
-    claim="Commit 4249f27 was pushed to a2h-onus by the repo owner",
+    claim="Commit f0b7a571 was pushed to a2h-onus by the repo owner",
     evidence={"type": "gitlawb_commit",
-              "content": {"owner": "z6Mk...", "repo": "a2h-onus", "sha": "4249f27..."}},
+              "content": {"owner": "z6Mk...", "repo": "a2h-onus",
+                          "sha": "f0b7a571ec263ac2c99482d5f6688aece484bc99"}},
 )
 # -> evidence_grade E4, verdict approved, receipt.model_id "deterministic"
 ```
 
-This is the E4 deterministic path with a real data source behind it. A confirmed
-record returns without a model call; a record that does not check out is downgraded
-to `E1` and routed to review. The check fails closed — any network or parse error
-means *not verified*, never *verified*.
+Three conditions must all hold before this reaches E4: the hash is in the
+repository's commit list, a ref-update certificate names that exact hash, and that
+certificate's `pusher_did` equals the owner DID. Anything short of the three is
+downgraded to `E1` and routed to review. The check fails closed — any network or
+parse error means *not verified*, never *verified*.
+
+A commit that only ever appeared mid-push has no certificate naming it, so it
+cannot be owner-attributed from this API and does not reach E4. One push produces
+one certificate, covering the ref tip.
 
 Endpoints read (all verified against a live node):
 
@@ -175,13 +189,19 @@ Endpoints read (all verified against a live node):
 |---|---|
 | `/api/v1/repos/{owner}/{repo}` | repository record exists |
 | `/api/v1/repos/{owner}/{repo}/commits` | exact commit hash present |
-| `/api/v1/repos/{owner}/{repo}/certs` | signed ref-update certificates |
+| `/api/v1/repos/{owner}/{repo}/certs` | signed ref-update certificates, and the `pusher_did` that makes owner attribution possible |
 | `/api/v1/repos/{owner}/{repo}/pulls` | pull request state |
 
-**What this proves, and what it does not.** It proves the record exists on the
-network under that owner with that hash. It says nothing about whether the work in
-the commit is correct, useful, or honest — that is a judgment, and judgments stay in
-the judge layer one step up.
+**What this proves, and what it does not.** It proves that the node recorded a
+signed ref update, by the owner, naming that exact commit. It says nothing about
+whether the work in the commit is correct, useful, or honest — that is a judgment,
+and judgments stay in the judge layer one step up.
+
+It also does not prove that the node would have *blocked* a push from a non-owner.
+gitlawb's own documentation states that write authorization is not owner-enforced by
+default (`GITLAWB_ENFORCE_OWNER_PUSH` defaults to false). That policy is not visible
+through the public API, so Onus reports it as `gitlawb_owner_push_enforced: null` —
+unknown, not assumed.
 
 ## Measured on live Jev
 
@@ -227,6 +247,8 @@ This is an early release. Be clear about what it does **not** do yet:
 - **Duplicate detection is exact-match.** Change one character and it's a new hash.
 - **No image understanding.** Screenshots always route to human review.
 - **gitlawb verification covers records, not quality.** The node confirms that a commit exists under an owner; it cannot tell you whether the work is any good. Treat a gitlawb pass as "this happened", not "this was worth paying for".
+- **gitlawb owner attribution is the closest the API gets, not a guarantee.** `pusher_did == owner_did` is checked, but the node does not enforce owner-only pushes yet, so this establishes who the record *credits*, not that the node would have rejected anyone else. `gitlawb_owner_push_enforced` is returned as `null` for that reason.
+- **Only ref tips carry a certificate.** A commit that was never the tip of a signed push cannot be owner-attributed and is downgraded rather than assumed.
 
 What it *is* good for today: a cheap first-pass filter — flag off-topic and
 low-effort submissions, never auto-approve screenshots, and send humans only what is

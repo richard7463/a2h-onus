@@ -4,10 +4,27 @@ Reads a gitlawb node's public HTTP API and turns a repository's record into
 deterministic provenance signals. Public repos are readable without an identity,
 so this needs no keypair and no registration.
 
-What this proves: that a commit, branch or pull request **exists on the network,
-under that owner, with that hash**. It is a record check, not a quality check. A
-commit that exists tells you nothing about whether the work in it is any good —
-that is the judge's job, one layer up.
+What this proves, precisely:
+
+  1. the commit hash is present in the repo's commit list on this node;
+  2. the node holds a ref-update certificate whose ``new_sha`` is exactly that
+     commit — i.e. this commit was the tip of a signed ref update;
+  3. that certificate's ``pusher_did`` equals the repository's owner DID.
+
+All three are required before anything here is called verified. A commit that is
+merely present in the list is **not** enough: gitlawb's own documentation states
+that write authorization is not owner-enforced by default
+(``GITLAWB_ENFORCE_OWNER_PUSH`` defaults to false), so "a valid signature exists"
+and "the owner authorised this" are different statements. ``pusher_did ==
+owner_did`` is the closest the public API lets us get to the second one.
+
+What it still does not prove: that the node would have *blocked* a non-owner
+push. That is a node policy we cannot read from the API, so it is reported as
+``gitlawb_owner_push_enforced: None`` (unknown) rather than assumed.
+
+And it is a record check, not a quality check. A commit that exists tells you
+nothing about whether the work in it is any good — that is the judge's job, one
+layer up.
 
 Endpoints used (all verified against node.gitlawb.com, gl 0.7.1):
 
@@ -70,12 +87,45 @@ def fetch_certs(owner: str, repo: str, node: str = GITLAWB_NODE_DEFAULT) -> list
 
 def commit_on_network(owner: str, repo: str, sha: str,
                       node: str = GITLAWB_NODE_DEFAULT) -> bool:
-    """True only if the exact hash appears in the node's commit list for that repo."""
+    """Is this commit in the node's list for that repo?
+
+    A full 40-character hash must match exactly. A shorter string is treated as a
+    prefix, so the usual 7-12 character abbreviation still resolves — but the
+    input is never truncated, because trimming a full hash to 12 characters and
+    then prefix-matching would let one commit stand in for another.
+    """
     if not sha:
         return False
-    sha = sha.lower()
-    return any((c.get("hash") or "").lower().startswith(sha[:12]) for c in
-               fetch_commits(owner, repo, node))
+    want = sha.lower()
+    for c in fetch_commits(owner, repo, node):
+        got = (c.get("hash") or "").lower()
+        if got == want or (len(want) < 40 and got.startswith(want)):
+            return True
+    return False
+
+
+def _bare(did: str) -> str:
+    """DIDs are compared as bare keys: 'did:key:z6Mk...' and 'z6Mk...' are equal."""
+    return (did or "").strip().removeprefix("did:key:")
+
+
+def cert_for(owner: str, repo: str, sha: str,
+             node: str = GITLAWB_NODE_DEFAULT) -> dict | None:
+    """The ref-update certificate whose ``new_sha`` is exactly this commit, if any.
+
+    One push produces one certificate, covering the ref transition
+    (old_sha -> new_sha). So a certificate exists for the *tip* of each signed
+    push. A commit that only ever appeared mid-push has none, and cannot be
+    owner-attributed from the certificate list alone.
+    """
+    if not sha:
+        return None
+    want = sha.lower()
+    for c in fetch_certs(owner, repo, node):
+        got = (c.get("new_sha") or "").lower()
+        if got == want or (len(want) < 40 and got.startswith(want)):
+            return c
+    return None
 
 
 def check(content: dict, node: str | None = None) -> dict:
@@ -87,7 +137,8 @@ def check(content: dict, node: str | None = None) -> dict:
          "branch": "main"}
 
     Returns a signal block. ``api_verified`` is True only when the node
-    positively confirmed the referenced object exists.
+    positively confirmed the record **and** attributed the ref update to the
+    repository owner. Anything short of that fails closed.
     """
     node = node or os.environ.get("GITLAWB_NODE", GITLAWB_NODE_DEFAULT)
     owner = (content or {}).get("owner", "")
@@ -100,6 +151,12 @@ def check(content: dict, node: str | None = None) -> dict:
         "gitlawb_repo": repo,
         "gitlawb_repo_found": False,
         "gitlawb_commit_found": False,
+        "gitlawb_cert_present": False,
+        "gitlawb_pusher_did": None,
+        "gitlawb_pusher_is_owner": False,
+        # The node's own enforcement policy is not visible through the API.
+        # Reported as unknown rather than assumed to be on.
+        "gitlawb_owner_push_enforced": None,
         "gitlawb_certificates": 0,
         "api_verified": False,
     }
@@ -113,10 +170,26 @@ def check(content: dict, node: str | None = None) -> dict:
     signals["gitlawb_public"] = bool(info.get("public", True))
     signals["gitlawb_certificates"] = len(fetch_certs(owner, repo, node))
 
-    if sha:
-        signals["gitlawb_commit_found"] = commit_on_network(owner, repo, sha, node)
-        signals["api_verified"] = signals["gitlawb_commit_found"]
-    else:
+    if not sha:
         # No hash to pin: the repo existing is not enough to verify a claim.
-        signals["api_verified"] = False
+        return signals
+
+    signals["gitlawb_commit_found"] = commit_on_network(owner, repo, sha, node)
+    if not signals["gitlawb_commit_found"]:
+        return signals
+
+    cert = cert_for(owner, repo, sha, node)
+    if not cert:
+        # The commit is on the branch, but no signed ref update names it as the
+        # tip — so we cannot attribute the push to anyone. Record, not proof.
+        return signals
+
+    signals["gitlawb_cert_present"] = True
+    signals["gitlawb_pusher_did"] = cert.get("pusher_did")
+    signals["gitlawb_pusher_is_owner"] = _bare(cert.get("pusher_did")) == _bare(
+        info.get("owner_did") or owner
+    )
+    signals["api_verified"] = bool(
+        signals["gitlawb_cert_present"] and signals["gitlawb_pusher_is_owner"]
+    )
     return signals
