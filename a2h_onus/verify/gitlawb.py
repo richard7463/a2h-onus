@@ -22,6 +22,14 @@ What it still does not prove: that the node would have *blocked* a non-owner
 push. That is a node policy we cannot read from the API, so it is reported as
 ``gitlawb_owner_push_enforced: None`` (unknown) rather than assumed.
 
+One more property worth knowing before you rely on it: the certificate list
+tracks the ref tips the node currently lists, not the whole history. Push again
+and the previous tip's certificate rolls off. So owner attribution is a
+statement about **now**, not a permanent property of the commit — which is why
+``gitlawb_cert_list_is_snapshot`` is set to True on every result. Persist the
+verdict (and its receipt) at the time you check it, rather than re-deriving it
+later and expecting the same answer.
+
 And it is a record check, not a quality check. A commit that exists tells you
 nothing about whether the work in it is any good — that is the judge's job, one
 layer up.
@@ -157,6 +165,10 @@ def check(content: dict, node: str | None = None) -> dict:
         # The node's own enforcement policy is not visible through the API.
         # Reported as unknown rather than assumed to be on.
         "gitlawb_owner_push_enforced": None,
+        # Certificates cover the ref tips the node currently lists. A later push
+        # moves the tip and the previous certificate rolls off, so attribution
+        # describes the present state, not the moment the commit landed.
+        "gitlawb_cert_list_is_snapshot": True,
         "gitlawb_certificates": 0,
         "api_verified": False,
     }

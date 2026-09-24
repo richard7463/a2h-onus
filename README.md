@@ -249,6 +249,7 @@ This is an early release. Be clear about what it does **not** do yet:
 - **gitlawb verification covers records, not quality.** The node confirms that a commit exists under an owner; it cannot tell you whether the work is any good. Treat a gitlawb pass as "this happened", not "this was worth paying for".
 - **gitlawb owner attribution is the closest the API gets, not a guarantee.** `pusher_did == owner_did` is checked, but the node does not enforce owner-only pushes yet, so this establishes who the record *credits*, not that the node would have rejected anyone else. `gitlawb_owner_push_enforced` is returned as `null` for that reason.
 - **Only ref tips carry a certificate.** A commit that was never the tip of a signed push cannot be owner-attributed and is downgraded rather than assumed.
+- **gitlawb attribution is a snapshot, not a permanent property.** The certificate list covers the ref tips the node currently lists. Push again and the previous tip's certificate rolls off, so a commit that verified today may not verify tomorrow. `gitlawb_cert_list_is_snapshot` is `true` on every result for exactly this reason — persist the verdict and its receipt when you check it instead of re-deriving it later.
 
 What it *is* good for today: a cheap first-pass filter — flag off-topic and
 low-effort submissions, never auto-approve screenshots, and send humans only what is
